@@ -74,11 +74,10 @@ class XiaomiCloudConnector:
                 self._passToken = json_resp["passToken"]
                 self._location = json_resp["location"]
                 self._code = json_resp["code"]
-            else:
-                if "notificationUrl" in json_resp:
-                    print("Two factor authentication required, please use following url and restart extractor:")
-                    print(json_resp["notificationUrl"])
-                    print()
+            elif "notificationUrl" in json_resp:
+                print("Two factor authentication required, please use following url and restart extractor:")
+                print(json_resp["notificationUrl"])
+                print()
         return valid
 
     def login_step_3(self):
@@ -109,13 +108,13 @@ class XiaomiCloudConnector:
         return False
 
     def get_homes(self, country):
-        url = self.get_api_url(country) + "/v2/homeroom/gethome"
+        url = f"{self.get_api_url(country)}/v2/homeroom/gethome"
         params = {
             "data": '{"fg": true, "fetch_share": true, "fetch_share_dev": true, "limit": 300, "app_ver": 7}'}
         return self.execute_api_call_encrypted(url, params)
 
     def get_devices(self, country, home_id, owner_id):
-        url = self.get_api_url(country) + "/v2/home/home_device_list"
+        url = f"{self.get_api_url(country)}/v2/home/home_device_list"
         params = {
             "data": '{"home_owner": ' + str(owner_id) +
             ',"home_id": ' + str(home_id) +
@@ -124,14 +123,14 @@ class XiaomiCloudConnector:
         return self.execute_api_call_encrypted(url, params)
 
     def get_dev_cnt(self, country):
-        url = self.get_api_url(country) + "/v2/user/get_device_cnt"
+        url = f"{self.get_api_url(country)}/v2/user/get_device_cnt"
         params = {
             "data": '{ "fetch_own": true, "fetch_share": true}'
         }
         return self.execute_api_call_encrypted(url, params)
 
     def get_beaconkey(self, country, did):
-        url = self.get_api_url(country) + "/v2/device/blt_get_beaconkey"
+        url = f"{self.get_api_url(country)}/v2/device/blt_get_beaconkey"
         params = {
             "data": '{"did":"' + did + '","pdid":1}'
         }
@@ -167,7 +166,11 @@ class XiaomiCloudConnector:
 
     @staticmethod
     def get_api_url(country):
-        return "https://" + ("" if country == "cn" else (country + ".")) + "api.io.mi.com/app"
+        return (
+            "https://"
+            + ("" if country == "cn" else f"{country}.")
+            + "api.io.mi.com/app"
+        )
 
     def signed_nonce(self, nonce):
         hash_object = hashlib.sha256(base64.b64decode(self._ssecurity) + base64.b64decode(nonce))
@@ -195,8 +198,7 @@ class XiaomiCloudConnector:
     @staticmethod
     def generate_signature(url, signed_nonce, nonce, params):
         signature_params = [url.split("com")[1], signed_nonce, nonce]
-        for k, v in params.items():
-            signature_params.append(f"{k}={v}")
+        signature_params.extend(f"{k}={v}" for k, v in params.items())
         signature_string = "&".join(signature_params)
         signature = hmac.new(base64.b64decode(signed_nonce), msg=signature_string.encode(), digestmod=hashlib.sha256)
         return base64.b64encode(signature.digest()).decode()
@@ -204,8 +206,7 @@ class XiaomiCloudConnector:
     @staticmethod
     def generate_enc_signature(url, method, signed_nonce, params):
         signature_params = [str(method).upper(), url.split("com")[1].replace("/app/", "/")]
-        for k, v in params.items():
-            signature_params.append(f"{k}={v}")
+        signature_params.extend(f"{k}={v}" for k, v in params.items())
         signature_params.append(signed_nonce)
         signature_string = "&".join(signature_params)
         return base64.b64encode(hashlib.sha1(signature_string.encode('utf-8')).digest()).decode()
@@ -245,7 +246,7 @@ def print_tabbed(value, tab):
 
 def print_entry(key, value, tab):
     if value:
-        print_tabbed(f'{key + ":": <10}{value}', tab)
+        print_tabbed(f'{f"{key}:": <10}{value}', tab)
 
 
 def main():
@@ -263,27 +264,29 @@ def main():
         server = input()
 
     print()
-    if not server == "":
+    if server != "":
         servers = [server]
 
     connector = XiaomiCloudConnector(username, password)
     print("Logging in...")
-    logged = connector.login()
-    if logged:
+    if logged := connector.login():
         print("Logged in.")
         print()
         for current_server in servers:
             hh = []
             homes = connector.get_homes(current_server)
             if homes is not None:
-                for h in homes['result']['homelist']:
-                    hh.append({'home_id': h['id'], 'home_owner': connector.userId})
+                hh.extend(
+                    {'home_id': h['id'], 'home_owner': connector.userId}
+                    for h in homes['result']['homelist']
+                )
             dev_cnt = connector.get_dev_cnt(current_server)
             if dev_cnt is not None:
-                for h in dev_cnt["result"]["share"]["share_family"]:
-                    hh.append({'home_id': h['home_id'], 'home_owner': h['home_owner']})
-
-            if len(hh) == 0:
+                hh.extend(
+                    {'home_id': h['home_id'], 'home_owner': h['home_owner']}
+                    for h in dev_cnt["result"]["share"]["share_family"]
+                )
+            if not hh:
                 print(f'No homes found for server "{current_server}".')
                 continue
 
